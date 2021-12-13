@@ -722,9 +722,37 @@ subroutine fill_buffer_double(i_generator, sp, h1, h2, bannedOrb, banned, fock_d
       logical :: do_diag
       do_diag = .False.
 
+      ! Hermitian 
+      ! <alpha|H|psi_0> = \sum_i c_i <alpha|H|i>
+      ! c_alpha = <alpha|H|psi>/delta_E(alpha)
+      ! e_alpha = c_alpha * <alpha|H|psi_0>
+      ! Non hermitian 
+      ! c_alpha = <alpha|H(j)|psi>/delta_E(alpha)
+      ! e_alpha = c_alpha * <psi_0|H(j)|alpha>
+      ! <alpha|H|psi_0> and <psi_0|H|alpha>
+      ! <det|H(j)|psi_0> and transpose 
+      ! psi_det_generators :: |i> of psi_0, 
+      ! psi_coef_generators --> c_i of psi_0
+      ! 
+      !   |psi_0>       |  alpha> 
+      ! | E0            |alpha_h_psi |
+      ! | alpha_h_psi   |      Hii   |
+      ! c_alpha, E0  + e_pert
+      ! c_alpha = <alpha|H(j)|psi>
+!                = \sum_i \in psi c_i * <alpha|H(j)|i> 
+!                                 call htilde_mu_mat_tot(alpha,psi_selectors(1,1,i),Nint,htot)
+!                                 call htilde_mu_mat_tot(psi_selectors(1,1,i),alpha,Nint,htot_dag)
+!                                 psi_selectors_coef(i,1) * htot
+!                                 psi_selectors_coef(i,1) * htot_dag
+
+!        coef(1) = <alpha|H^t|psi>/delta_E = alpha_h_psi
+!        e_pert = psi_h_alpha * coef(1)
+        ! flag if non hermitian selection 
+        ! do your stuff to provide e_pert, coef
+        ! else the usual 
       do istate=1,N_states
         delta_E = E0(istate) - Hii + E_shift
-        alpha_h_psi = mat(istate, p1, p2)
+        alpha_h_psi = mat(istate, p1, p2) 
         if (alpha_h_psi == 0.d0) cycle
 
         val = alpha_h_psi + alpha_h_psi
@@ -732,7 +760,7 @@ subroutine fill_buffer_double(i_generator, sp, h1, h2, bannedOrb, banned, fock_d
         if (delta_E < 0.d0) then
             tmp = -tmp
         endif
-        e_pert(istate) = 0.5d0 * (tmp - delta_E)
+        e_pert(istate) = 0.5d0 * (tmp - delta_E) 
         if (dabs(alpha_h_psi) > 1.d-4) then
           coef(istate) = e_pert(istate) / alpha_h_psi
         else
@@ -746,28 +774,28 @@ subroutine fill_buffer_double(i_generator, sp, h1, h2, bannedOrb, banned, fock_d
       double precision :: work(1+6*(N_states+1)+2*(N_states+1)**2)
       integer :: info, k , iwork(N_states+1)
 
-      if (do_diag) then
-        double precision :: pt2_matrix(N_states+1,N_states+1)
-        pt2_matrix(N_states+1,N_states+1) = Hii+E_shift
-        do istate=1,N_states
-          pt2_matrix(:,istate) = 0.d0
-          pt2_matrix(istate,istate) = E0(istate)
-          pt2_matrix(istate,N_states+1) = mat(istate,p1,p2)
-          pt2_matrix(N_states+1,istate) = mat(istate,p1,p2)
-        enddo
+!     if (do_diag) then
+!       double precision :: pt2_matrix(N_states+1,N_states+1)
+!       pt2_matrix(N_states+1,N_states+1) = Hii+E_shift
+!       do istate=1,N_states
+!         pt2_matrix(:,istate) = 0.d0
+!         pt2_matrix(istate,istate) = E0(istate)
+!         pt2_matrix(istate,N_states+1) = mat(istate,p1,p2)
+!         pt2_matrix(N_states+1,istate) = mat(istate,p1,p2)
+!       enddo
 
-        call DSYEV( 'V', 'U', N_states+1, pt2_matrix, N_states+1, eigvalues, &
-                     work, size(work), info )
-        if (info /= 0) then
-          print *, 'error in '//irp_here
-          stop -1
-        endif
-        pt2_matrix = dabs(pt2_matrix)
-        iwork(1:N_states+1) = maxloc(pt2_matrix,DIM=1)
-        do k=1,N_states
-          e_pert(k) = eigvalues(iwork(k)) - E0(k)
-        enddo
-      endif
+!       call DSYEV( 'V', 'U', N_states+1, pt2_matrix, N_states+1, eigvalues, &
+!                    work, size(work), info )
+!       if (info /= 0) then
+!         print *, 'error in '//irp_here
+!         stop -1
+!       endif
+!       pt2_matrix = dabs(pt2_matrix)
+!       iwork(1:N_states+1) = maxloc(pt2_matrix,DIM=1)
+!       do k=1,N_states
+!         e_pert(k) = eigvalues(iwork(k)) - E0(k)
+!       enddo
+!     endif
 
 
 
@@ -1004,6 +1032,10 @@ subroutine get_d2(gen, phasemask, bannedOrb, banned, mat, mask, h, p, sp, coefs)
         p1 = p(i1, ma)
         p2 = p(i2, ma)
 
+        ! <p1 p2|1/r12|h1 h2> --> <p1 p2| w_ee^h + t^nh | h1 h2> --> < p2 p1 | H^tilde| h1 h2 >
+        ! 
+        !                      <p1 p2 | h1 h2>        -            <p2 p1 | h1 h2 >
+        ! < p2 p1 | H^tilde^dag| h1 h2 > = < h1 h2 | w_ee^h + t^nh | p1 p2 >
         hij = mo_two_e_integral(p1, p2, h1, h2) - mo_two_e_integral(p2, p1, h1, h2)
         if (hij == 0.d0) cycle
 
