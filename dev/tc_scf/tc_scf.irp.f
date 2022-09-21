@@ -11,11 +11,55 @@ program tc_scf
   my_grid_becke  = .True.
   my_n_pt_r_grid = 30
   my_n_pt_a_grid = 50
+!  my_n_pt_r_grid = 10 ! small grid for quick debug
+!  my_n_pt_a_grid = 26 ! small grid for quick debug
   touch my_grid_becke my_n_pt_r_grid my_n_pt_a_grid
+
+  !call create_guess
+  !call orthonormalize_mos
 
   call routine_scf()
 
 end
+
+! ---
+
+subroutine create_guess
+
+  BEGIN_DOC
+  !   Create a MO guess if no MOs are present in the EZFIO directory
+  END_DOC
+
+  implicit none
+  logical :: exists
+
+  PROVIDE ezfio_filename
+  call ezfio_has_mo_basis_mo_coef(exists)
+
+  if (.not.exists) then
+    mo_label = 'Guess'
+    if (mo_guess_type == "HCore") then
+      mo_coef = ao_ortho_lowdin_coef
+      call restore_symmetry(ao_num, mo_num, mo_coef, size(mo_coef, 1), 1.d-10)
+      TOUCH mo_coef
+      call mo_as_eigvectors_of_mo_matrix(mo_one_e_integrals,     &
+          size(mo_one_e_integrals,1),                            &
+          size(mo_one_e_integrals,2),                            &
+          mo_label,1,.false.)
+      call restore_symmetry(ao_num, mo_num, mo_coef, size(mo_coef,1), 1.d-10)
+      SOFT_TOUCH mo_coef
+    else if (mo_guess_type == "Huckel") then
+      call huckel_guess
+    else
+      print *,  'Unrecognized MO guess type : '//mo_guess_type
+      stop 1
+    endif
+    SOFT_TOUCH mo_label
+  endif
+
+end subroutine create_guess
+
+! ---
 
 subroutine routine_scf()
 
@@ -26,7 +70,7 @@ subroutine routine_scf()
   it = 0
   print*,'iteration = ', it
 
-  !print*,'grad_good_hermit_tc_fock_mat = ', grad_good_hermit_tc_fock_mat
+  !print*,'grad_hermit = ', grad_hermit
   print*,'***'
   print*,'TC HF total energy = ', TC_HF_energy
   print*,'TC HF 1 e   energy = ', TC_HF_one_electron_energy
@@ -36,7 +80,7 @@ subroutine routine_scf()
   endif
   print*,'***'
   e_delta = 10.d0
-  e_save  = TC_HF_energy
+  e_save  = 0.d0 !TC_HF_energy
 
   if(bi_ortho)then
    mo_l_coef = fock_tc_leigvec_ao
@@ -45,14 +89,15 @@ subroutine routine_scf()
    call ezfio_set_bi_ortho_mos_mo_r_coef(mo_r_coef)
    TOUCH mo_l_coef mo_r_coef
   else
-   print*,'grad_good_hermit_tc_fock_mat = ',grad_good_hermit_tc_fock_mat
+   print*,'grad_hermit = ',grad_hermit
    call save_good_hermit_tc_eigvectors
    TOUCH mo_coef 
    call save_mos
   endif
 
   if(bi_ortho)then
-   do while( it .lt. n_it_tcscf_max .and. (e_delta .gt. (thresh_tcscf)))
+   do while( it .lt. n_it_tcscf_max .and. (e_delta .gt. dsqrt(thresh_tcscf)) )
+!   do while( it .lt. n_it_tcscf_max .and. (e_delta .gt. thresh_tcscf) )
      it += 1
      print*,'iteration = ', it
      print*,'***'
@@ -70,8 +115,8 @@ subroutine routine_scf()
      TOUCH mo_l_coef mo_r_coef
    enddo
   else
-   do while( (grad_good_hermit_tc_fock_mat.gt.dsqrt(thresh_tcscf)) .and. it .lt. n_it_tcscf_max )
-      print*,'grad_good_hermit_tc_fock_mat = ',grad_good_hermit_tc_fock_mat
+   do while( (grad_hermit.gt.dsqrt(thresh_tcscf)) .and. it .lt. n_it_tcscf_max )
+      print*,'grad_hermit = ',grad_hermit
       it += 1
       print*,'iteration = ', it
       print*,'***'
